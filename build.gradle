@@ -1,0 +1,49 @@
+plugins {
+    id "org.jetbrains.intellij" version "0.4.18"
+    id 'org.jetbrains.kotlin.jvm' version '1.3.40'
+    id "java"
+}
+
+group = "io.nebula.idea.plugin"
+version = "1.0-SNAPSHOT"
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8")
+//    implementation fileTree(include: ['*.jar'], dir: 'libs')
+}
+
+// See https://github.com/JetBrains/gradle-intellij-plugin/
+intellij {
+    // Define IntelliJ Platform against which to build the plugin project.
+    version = "191.8026.42"  // Same IntelliJ IDEA version (2019.1.4) as target 3.5 Android Studio
+    // Require the Android plugin, Gradle will match the plugin version to intellij.version
+    plugins = ['android', 'Groovy']
+}
+
+runIde {
+    // Absolute path to installed target 3.5 Android Studio to use as IDE Development Instance
+    // The "Contents" directory is macOS specific.
+    ideDirectory = "/Applications/Android Studio.app/Contents"
+}
+
+
+sourceCompatibility = JavaVersion.VERSION_1_8
+
+compileKotlin {
+    kotlinOptions.jvmTarget = "1.8"
+}
+compileTestKotlin {
+    kotlinOptions.jvmTarget = "1.8"
+}
+
+
+patchPluginXml {
+    changeNotes """
+      Add change notes here.<br>
+      <em>most HTML tags may be used</em>"""
+}
+

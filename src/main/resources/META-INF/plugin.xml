@@ -1,0 +1,34 @@
+<idea-plugin>
+    <id>io.nebula.idea.plugin.cpnt-build</id>
+    <name>cpnt-build</name>
+    <vendor email="support@yourcompany.com" url="http://www.yourcompany.com">YourCompany</vendor>
+
+    <description><![CDATA[
+    Enter short description for your plugin here.<br>
+    <em>most HTML tags may be used</em>
+    ]]></description>
+
+    <!-- please see http://www.jetbrains.org/intellij/sdk/docs/basics/getting_started/plugin_compatibility.html
+         on how to target different products -->
+    <!-- uncomment to enable plugin in all products
+    -->
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>org.jetbrains.android</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <!-- Add your extensions here -->
+    </extensions>
+
+    <actions>
+        <group id="Plugin.ToolbarRunGroup"
+               text="build addition"
+               description="MyPlugin Toolbar Menu">
+            <add-to-group group-id="ToolbarRunGroup" anchor="last"/>
+            <action id="cpnt-run"
+                    icon="/META-INF/run.svg"
+                    class="io.nebula.idea.plugin.ComponentBuildAction"
+                    text="run component app"/>
+        </group>
+    </actions>
+</idea-plugin>
