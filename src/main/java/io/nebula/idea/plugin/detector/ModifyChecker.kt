@@ -10,6 +10,7 @@ object ModifyChecker {
         "build",
         ".externalNativeBuild",
         "src/test",
+        "src/androidTest",
         ".gitignore",
         "*.iml"
     )
@@ -33,7 +34,7 @@ object ModifyChecker {
                 return@forEach
             }
             moduleModified = false
-            checkRecursive(moduleDir, snapshot, basePath!!)
+            checkRecursive(moduleDir, snapshot, moduleDir.absolutePath)
             if (moduleModified) {
                 result.add(it)
             }
@@ -103,6 +104,7 @@ object ModifyChecker {
             if (it.isDirectory) {
                 if (currSnapshot is DirSnapshot) {
                     checkRecursive(it, currSnapshot, basePath)
+                    existFileSet.add(currSnapshot)
                 } else {
                     moduleModified = true
                     println("dir: ${it.absolutePath} changed to file.")

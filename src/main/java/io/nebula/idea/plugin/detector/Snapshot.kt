@@ -1,7 +1,10 @@
 package io.nebula.idea.plugin.detector
 
+import com.google.common.io.ByteStreams
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.lang.RuntimeException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.charset.StandardCharsets.UTF_8
@@ -26,7 +29,11 @@ abstract class Snapshot internal constructor() {
     open fun writeToExternal(snapshot: File) {
         if (!snapshot.exists()) {
             snapshot.createNewFile()
+        } else {
+            snapshot.delete()
+            snapshot.createNewFile()
         }
+//        snapshot.writeText(Gson().toJson(this))
         FileOutputStream(snapshot).use {
             val size = toByteArray().size
             println("totoal size:" + size)
@@ -36,7 +43,11 @@ abstract class Snapshot internal constructor() {
     }
 
     open fun readFromExternal(snapshot: File) {
-
+        if (!snapshot.exists()) {
+            throw RuntimeException("cannot find snapshots file:${snapshot.absolutePath}")
+        }
+        val buffer = ByteBuffer.wrap(ByteStreams.toByteArray(FileInputStream(snapshot))).order(ByteOrder.LITTLE_ENDIAN)
+        readFromExternal(buffer)
     }
 
     open fun readFromExternal(buffer: ByteBuffer): Long {

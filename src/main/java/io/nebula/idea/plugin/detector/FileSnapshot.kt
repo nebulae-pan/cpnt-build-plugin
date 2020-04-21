@@ -3,6 +3,10 @@ package io.nebula.idea.plugin.detector
 import com.google.gson.Gson
 import java.io.File
 import java.nio.ByteBuffer
+import com.intellij.util.LocalTimeCounter.currentTime
+import java.text.SimpleDateFormat
+import java.util.*
+
 
 open class FileSnapshot internal constructor() : Snapshot() {
     private var size: Long = 0

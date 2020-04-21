@@ -15,6 +15,7 @@ import com.intellij.openapi.module.Module
 import com.intellij.openapi.module.ModuleManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Computable
+import com.intellij.openapi.vfs.impl.local.LocalFileSystemBase
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiManager
 import com.intellij.psi.util.PsiTreeUtil
@@ -37,6 +38,7 @@ class ComponentBuildAction : AnAction() {
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project
         project ?: return
+//        LocalFileSystemBase.getInstance().refresh(false)
         Notifier.notifyBalloon(project, "Component build", "start component build process.")
 
         val target = ExecutionTargetManager.getInstance(e.project!!).activeTarget
