@@ -12,16 +12,17 @@ object ModifyChecker {
         "src/test",
         "src/androidTest",
         ".gitignore",
-        "*.iml"
+        "*.iml",
+        ".cxx"
     )
 
     private var moduleModified = false
 
-    fun checkForModifiedModuleList(project: Project, moduleDepList: Set<String>): List<String> {
+    fun checkForModifiedModuleList(project: Project, moduleDepList: Set<String>): List<CheckResult> {
         val startMillis = System.currentTimeMillis()
         val basePath = project.basePath
         println(basePath)
-        val result = arrayListOf<String>()
+        val result = arrayListOf<CheckResult>()
         moduleDepList.forEach {
             val moduleDir = File(basePath, it)
             val buildFile = File(moduleDir.parent, "build")
@@ -29,16 +30,16 @@ object ModifyChecker {
             if (snapshot == null) {
                 //no previous build config, full build, and save snapshots
                 val dirSnapshot = constructSnapshot(moduleDir, moduleDir.absolutePath)
-                writeTopSnapshot(dirSnapshot, moduleDir, buildFile)
-                result.add(it)
+//                writeTopSnapshot(dirSnapshot, moduleDir, buildFile)
+                result.add(CheckResult(it, dirSnapshot, getSnapshotFile(moduleDir, buildFile)))
                 return@forEach
             }
             moduleModified = false
             checkRecursive(moduleDir, snapshot, moduleDir.absolutePath)
             if (moduleModified) {
-                result.add(it)
+                result.add(CheckResult(it, snapshot, getSnapshotFile(moduleDir, buildFile)))
             }
-            snapshot.writeToExternal(getSnapshotFile(moduleDir, buildFile))
+//            snapshot.writeToExternal(getSnapshotFile(moduleDir, buildFile))
         }
         println("check cost:${System.currentTimeMillis() - startMillis}")
         return result
@@ -160,5 +161,15 @@ object ModifyChecker {
 
     private fun getSnapshotFile(file: File, buildFile: File): File {
         return File(buildFile, file.name + ".snapshot")
+    }
+
+    data class CheckResult internal constructor(
+        val moduleName: String,
+        private val snapshot: Snapshot,
+        private val outputDir: File
+    ) {
+        fun rewriteSnapshot() {
+            snapshot.writeToExternal(outputDir)
+        }
     }
 }

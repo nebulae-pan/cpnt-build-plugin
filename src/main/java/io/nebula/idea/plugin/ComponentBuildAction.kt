@@ -6,22 +6,24 @@ import com.android.tools.idea.gradle.dsl.parser.elements.*
 import com.android.tools.idea.gradle.dsl.parser.files.GradleDslFile
 import com.android.tools.idea.gradle.project.model.AndroidModuleModel
 import com.android.tools.idea.run.deployment.AndroidExecutionTarget
-import com.intellij.execution.ExecutionTargetManager
-import com.intellij.execution.RunManager
+import com.intellij.execution.*
+import com.intellij.execution.executors.DefaultRunExecutor
+import com.intellij.execution.process.ProcessHandler
+import com.intellij.execution.runners.ExecutionEnvironment
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.module.Module
+import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.module.ModuleManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Computable
-import com.intellij.openapi.vfs.impl.local.LocalFileSystemBase
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiManager
 import com.intellij.psi.util.PsiTreeUtil
 import io.nebula.idea.plugin.detector.ModifyChecker
 import io.nebula.idea.plugin.dslmodule.ComponentBlockElement
 import io.nebula.idea.plugin.dslmodule.DependenciesBlockElement
+import io.nebula.idea.plugin.execute.GradleInvoker
 import io.nebula.idea.plugin.utils.Notifier
 import org.jetbrains.plugins.groovy.lang.psi.GroovyElementVisitor
 import org.jetbrains.plugins.groovy.lang.psi.GroovyFile
@@ -33,34 +35,82 @@ import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrExpres
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrReferenceExpression
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.literals.GrLiteral
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.path.GrMethodCallExpression
+import java.io.File
+import java.util.*
 
 class ComponentBuildAction : AnAction() {
+
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project
         project ?: return
-//        LocalFileSystemBase.getInstance().refresh(false)
+        FileDocumentManager.getInstance().saveAllDocuments()
         Notifier.notifyBalloon(project, "Component build", "start component build process.")
 
-        val target = ExecutionTargetManager.getInstance(e.project!!).activeTarget
+        val target = ExecutionTargetManager.getInstance(project).activeTarget
         if (target is AndroidExecutionTarget) {
-            println(target.iDevice?.serialNumber + ":::")
+            println(target.iDevice?.serialNumber)
         }
         val configuration = RunManager.getInstance(project).selectedConfiguration ?: return
         val moduleName = configuration.name
         val moduleDepSet = hashSetOf(moduleName)
         println("configuration name: $moduleName")
         resolveConfigurationDependencies(moduleName, project, moduleDepSet)
-        moduleDepSet.forEach {
-            println("name:" + it)
-        }
         moduleDepSet.remove(moduleName)
-        ModifyChecker.checkForModifiedModuleList(project, moduleDepSet).forEach {
-            println("changed module:$it")
+        val checkResultList = ModifyChecker.checkForModifiedModuleList(project, moduleDepSet)
+        if (checkResultList.isEmpty()) {
+            ProgramRunnerUtil.executeConfiguration(
+                configuration, DefaultRunExecutor.getRunExecutorInstance()
+            )
+            return
         }
-//        ProgramRunnerUtil.executeConfiguration(
-//            RunManager.getInstance(project).selectedConfiguration!!,
-//            DefaultRunExecutor.getRunExecutorInstance()
-//        )
+        val dispatcher = GradleTaskDispatcher(project, checkResultList)
+
+        val connection = ApplicationManager.getApplication()
+            .messageBus.connect(ExecutorRegistry.getInstance() as ExecutorRegistryImpl)
+        connection.subscribe(ExecutionManager.EXECUTION_TOPIC, object : ExecutionListener {
+            override fun processStartScheduled(executorId: String, environment: ExecutionEnvironment) {
+                println()
+            }
+
+            override fun processNotStarted(executorId: String, environment: ExecutionEnvironment) {
+                println()
+            }
+
+            override fun processStarted(
+                executorId: String,
+                environment: ExecutionEnvironment,
+                handler: ProcessHandler
+            ) {
+                println()
+            }
+        })
+
+        executeTask(project, dispatcher.next(), object : GradleInvoker.ExecuteListener {
+            override fun onSucceed() {
+
+                dispatcher.rewriteSnapshot()
+                ApplicationManager.getApplication().invokeLater {
+                    if (dispatcher.hasNext()) {
+                        executeTask(project, dispatcher.next(), this)
+                    } else {
+                        ProgramRunnerUtil.executeConfiguration(
+                            configuration, DefaultRunExecutor.getRunExecutorInstance()
+                        )
+                    }
+                }
+            }
+
+            override fun onFailed() {
+
+            }
+
+            override fun onEnd() {
+            }
+        })
+    }
+
+    private fun executeTask(project: Project, task: String, listener: GradleInvoker.ExecuteListener) {
+        GradleInvoker.getInstance(project).executeTasks(File(project.basePath!!), listOf(task), listener)
     }
 
     private fun resolveConfigurationDependencies(
@@ -215,18 +265,48 @@ class ComponentBuildAction : AnAction() {
         throw RuntimeException("got expression actually type is ${propertyExpression.javaClass.name} but except is GrLiteral")
     }
 
-    private fun combineFlavors(module: Module): String {
-        val model = AndroidModuleModel.get(module)
-        val flavors = model?.selectedVariant?.productFlavors
-        var str = ""
-        flavors?.forEach {
-            str += upperFirstChat(it)
-        }
-        return str
-    }
 
-    private fun upperFirstChat(string: String): String {
-        return string[0].toUpperCase() + string.substring(1)
+    private class GradleTaskDispatcher(
+        val project: Project,
+        val resultList: List<ModifyChecker.CheckResult>
+    ) {
+        private var mIndex = 0
+
+        private var mCurrentResult: ModifyChecker.CheckResult? = null
+
+        fun hasNext(): Boolean {
+            return mIndex < resultList.size
+        }
+
+        fun next(): String {
+            if (mIndex >= resultList.size) {
+                return ""
+            }
+            mCurrentResult = resultList[mIndex++]
+            val moduleName = mCurrentResult?.moduleName ?: return ""
+            return "$moduleName:localComponent${combineFlavors(project, moduleName)}"
+        }
+
+        fun rewriteSnapshot() {
+            mCurrentResult?.rewriteSnapshot()
+        }
+
+
+        private fun combineFlavors(project: Project, moduleName: String): String {
+            val module = ModuleManager.getInstance(project).modules.find { it.name == moduleName }
+                ?: throw RuntimeException("cannot find module:$moduleName")
+            val model = AndroidModuleModel.get(module)
+            val flavors = model?.selectedVariant?.productFlavors
+            var str = ""
+            flavors?.forEach {
+                str += upperFirstChat(it)
+            }
+            return str
+        }
+
+        private fun upperFirstChat(string: String): String {
+            return string[0].toUpperCase() + string.substring(1)
+        }
     }
 }
 
