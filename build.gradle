@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "io.nebula.idea.plugin"
-version = "1.0-SNAPSHOT"
+version = "1.0.1"
 
 repositories {
     mavenCentral()
@@ -16,12 +16,13 @@ dependencies {
 //    implementation fileTree(include: ['*.jar'], dir: 'libs')
 }
 
+
 // See https://github.com/JetBrains/gradle-intellij-plugin/
 intellij {
     // Define IntelliJ Platform against which to build the plugin project.
-    version = "191.8026.42"  // Same IntelliJ IDEA version (2019.1.4) as target 3.5 Android Studio
+    version = "192.7142.36"  // Same IntelliJ IDEA version (2019.1.4) as target 3.5 Android Studio
     // Require the Android plugin, Gradle will match the plugin version to intellij.version
-    plugins = ['android', 'Groovy']
+    plugins = ['android', 'Groovy', 'java']
 }
 
 runIde {

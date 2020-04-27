@@ -3,9 +3,9 @@ package io.nebula.idea.plugin.execute
 import com.android.tools.idea.gradle.project.build.invoker.BuildStopper
 import com.android.tools.idea.gradle.project.build.invoker.GradleBuildInvoker
 import com.android.tools.idea.gradle.project.build.invoker.GradleTasksExecutorFactory
-import com.android.tools.idea.gradle.project.build.output.*
 import com.android.tools.idea.gradle.util.AndroidGradleSettings
 import com.android.tools.idea.gradle.util.GradleUtil
+import com.android.tools.idea.gradle.util.GradleUtil.GRADLE_SYSTEM_ID
 import com.android.tools.idea.gradle.util.LocalProperties
 import com.android.tools.idea.sdk.IdeSdks
 import com.google.common.collect.ArrayListMultimap
@@ -13,10 +13,6 @@ import com.google.common.collect.Multimap
 import com.intellij.build.BuildViewManager
 import com.intellij.build.DefaultBuildDescriptor
 import com.intellij.build.events.impl.*
-import com.intellij.build.output.BuildOutputInstantReaderImpl
-import com.intellij.build.output.JavacOutputParser
-import com.intellij.build.output.KotlincOutputParser
-import com.intellij.icons.AllIcons.Actions
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.application.ApplicationManager
@@ -31,8 +27,6 @@ import io.nebula.idea.plugin.filter.AndroidReRunBuildFilter
 import java.io.File
 import java.io.IOException
 import java.util.*
-import java.util.stream.Collectors
-import java.util.stream.Stream
 
 class GradleInvoker constructor(
     val project: Project,
@@ -106,27 +100,13 @@ class GradleInvoker constructor(
         listener: ExecuteListener
     ): ExternalSystemTaskNotificationListener {
         val buildViewManager = ServiceManager.getService(this.project, BuildViewManager::class.java) as BuildViewManager
-        val buildOutputParsersWrappers = Stream.of(
-            GradleBuildOutputParser(),
-            ClangOutputParser(),
-            CmakeOutputParser(),
-            XmlErrorOutputParser(),
-            AndroidGradlePluginOutputParser(),
-            DataBindingOutputParser(),
-            JavacOutputParser(),
-            KotlincOutputParser()
-        ).map {
-            BuildOutputParserWrapper(it)
-        }.collect(Collectors.toList()) as List<BuildOutputParserWrapper>
-        val buildOutputInstantReader = BuildOutputInstantReaderImpl(
-            request.taskId,
-            buildViewManager,
-            buildOutputParsersWrappers
-        )
-
+//        val buildOutputInstantReader = BuildOutputInstantReaderImpl(
+//            request.taskId, buildViewManager,
+//            buildOutputParsers
+//        )
         try {
             return object : ExternalSystemTaskNotificationListenerAdapter() {
-                private var myBuildFailed = false
+//                private var myReader = buildOutputInstantReader
 
                 override fun onStart(id: ExternalSystemTaskId, workingDir: String) {
                     val restartAction = object : AnAction() {
@@ -136,17 +116,15 @@ class GradleInvoker constructor(
                         }
 
                         override fun actionPerformed(e: AnActionEvent) {
-                            myBuildFailed = false
-                            buildOutputParsersWrappers.forEach { it.reset() }
+                            // Recreate the reader since the one created with the listener can be already closed (see b/73102585)
+//                            myReader.close()
+                            // noinspection resource, IOResourceOpenedButNotSafelyClosed
+//                            myReader =
+//                                BuildOutputInstantReaderImpl(request.taskId, buildViewManager, buildOutputParsers)
                             executeTasks(request)
                         }
                     }
-                    this.myBuildFailed = false
-                    buildOutputParsersWrappers.forEach { it.reset() }
-                    val presentation = restartAction.templatePresentation
-                    presentation.text = "Restart"
-                    presentation.description = "Restart"
-                    presentation.icon = Actions.Compile
+
                     val eventTime = System.currentTimeMillis()
                     val event = StartBuildEventImpl(
                         DefaultBuildDescriptor(id, executionName, workingDir, eventTime),
@@ -161,76 +139,55 @@ class GradleInvoker constructor(
                         val buildEvent = ExternalSystemUtil.convert(event)
                         buildViewManager.onEvent(buildEvent)
                     }
-
                 }
 
                 override fun onTaskOutput(id: ExternalSystemTaskId, text: String, stdOut: Boolean) {
                     buildViewManager.onEvent(OutputBuildEventImpl(id, text, stdOut))
+//                    myReader.append(text)
                 }
 
                 override fun onEnd(id: ExternalSystemTaskId) {
-                    if (this.myBuildFailed) {
-                        sendBuildFailureMetrics(buildOutputParsersWrappers, project)
-                    }
-                    if (id == request.taskId) {
-                        listener.onEnd()
-                    }
+//                    myReader.close()
+                    listener.onEnd()
                 }
 
                 override fun onSuccess(id: ExternalSystemTaskId) {
                     val event = FinishBuildEventImpl(
-                        id,
-                        null as Any?,
-                        System.currentTimeMillis(),
-                        "completed successfully",
+                        id, null, System.currentTimeMillis(), "completed successfully",
                         SuccessResultImpl()
                     )
                     buildViewManager.onEvent(event)
-                    if (id == request.taskId) {
-                        listener.onSucceed()
-                    }
+                    listener.onSucceed()
                 }
 
                 override fun onFailure(id: ExternalSystemTaskId, e: Exception) {
-                    this.myBuildFailed = true
                     val title = "$executionName failed"
-                    val failureResult = ExternalSystemUtil.createFailureResult(
-                        title,
-                        e,
-                        GradleUtil.GRADLE_SYSTEM_ID,
-                        project
-                    )
+                    val failureResult = ExternalSystemUtil.createFailureResult(title, e, GRADLE_SYSTEM_ID, project)
                     buildViewManager.onEvent(
                         FinishBuildEventImpl(
                             id,
-                            null as Any?,
+                            null,
                             System.currentTimeMillis(),
                             "build failed",
                             failureResult
                         )
                     )
-                    if (id == request.taskId) {
-                        listener.onFailed()
-                    }
+                    listener.onFailed()
                 }
 
                 override fun onCancel(id: ExternalSystemTaskId) {
                     super.onCancel(id)
-                    val event = FinishBuildEventImpl(
-                        id,
-                        null as Any?,
-                        System.currentTimeMillis(),
-                        "cancelled",
-                        SkippedResultImpl()
-                    )
+                    // Cause build view to show as skipped all pending tasks (b/73397414)
+                    val event =
+                        FinishBuildEventImpl(id, null, System.currentTimeMillis(), "cancelled", SkippedResultImpl())
                     buildViewManager.onEvent(event)
+//                    myReader.close()
                 }
             }
-        } catch (var7: Exception) {
-            buildOutputInstantReader.close()
-            throw var7
+        } catch (ignored: Exception) {
+//            buildOutputInstantReader.close()
+            throw ignored
         }
-
     }
 
     fun executeTasks(request: Request) {

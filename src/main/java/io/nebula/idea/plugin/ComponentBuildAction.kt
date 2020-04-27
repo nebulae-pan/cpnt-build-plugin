@@ -5,11 +5,9 @@ import com.android.tools.idea.gradle.dsl.model.GradleFileModelImpl
 import com.android.tools.idea.gradle.dsl.parser.elements.*
 import com.android.tools.idea.gradle.dsl.parser.files.GradleDslFile
 import com.android.tools.idea.gradle.project.model.AndroidModuleModel
-import com.android.tools.idea.run.deployment.AndroidExecutionTarget
-import com.intellij.execution.*
+import com.intellij.execution.ProgramRunnerUtil
+import com.intellij.execution.RunManager
 import com.intellij.execution.executors.DefaultRunExecutor
-import com.intellij.execution.process.ProcessHandler
-import com.intellij.execution.runners.ExecutionEnvironment
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.application.ApplicationManager
@@ -20,6 +18,7 @@ import com.intellij.openapi.util.Computable
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiManager
 import com.intellij.psi.util.PsiTreeUtil
+import com.intellij.util.containers.toArray
 import io.nebula.idea.plugin.detector.ModifyChecker
 import io.nebula.idea.plugin.dslmodule.ComponentBlockElement
 import io.nebula.idea.plugin.dslmodule.DependenciesBlockElement
@@ -46,10 +45,6 @@ class ComponentBuildAction : AnAction() {
         FileDocumentManager.getInstance().saveAllDocuments()
         Notifier.notifyBalloon(project, "Component build", "start component build process.")
 
-        val target = ExecutionTargetManager.getInstance(project).activeTarget
-        if (target is AndroidExecutionTarget) {
-            println(target.iDevice?.serialNumber)
-        }
         val configuration = RunManager.getInstance(project).selectedConfiguration ?: return
         val moduleName = configuration.name
         val moduleDepSet = hashSetOf(moduleName)
@@ -57,6 +52,7 @@ class ComponentBuildAction : AnAction() {
         resolveConfigurationDependencies(moduleName, project, moduleDepSet)
         moduleDepSet.remove(moduleName)
         val checkResultList = ModifyChecker.checkForModifiedModuleList(project, moduleDepSet)
+        Notifier.notify(project, "", "needs rebuild:${Arrays.toString(checkResultList.toArray(arrayOf()))}")
         if (checkResultList.isEmpty()) {
             ProgramRunnerUtil.executeConfiguration(
                 configuration, DefaultRunExecutor.getRunExecutorInstance()
@@ -65,29 +61,8 @@ class ComponentBuildAction : AnAction() {
         }
         val dispatcher = GradleTaskDispatcher(project, checkResultList)
 
-        val connection = ApplicationManager.getApplication()
-            .messageBus.connect(ExecutorRegistry.getInstance() as ExecutorRegistryImpl)
-        connection.subscribe(ExecutionManager.EXECUTION_TOPIC, object : ExecutionListener {
-            override fun processStartScheduled(executorId: String, environment: ExecutionEnvironment) {
-                println()
-            }
-
-            override fun processNotStarted(executorId: String, environment: ExecutionEnvironment) {
-                println()
-            }
-
-            override fun processStarted(
-                executorId: String,
-                environment: ExecutionEnvironment,
-                handler: ProcessHandler
-            ) {
-                println()
-            }
-        })
-
         executeTask(project, dispatcher.next(), object : GradleInvoker.ExecuteListener {
             override fun onSucceed() {
-
                 dispatcher.rewriteSnapshot()
                 ApplicationManager.getApplication().invokeLater {
                     if (dispatcher.hasNext()) {
@@ -143,18 +118,9 @@ class ComponentBuildAction : AnAction() {
 
         val dependenciesBlockElement =
             componentBlockElement.getPropertyElement("dependencies", DependenciesBlockElement::class.java) ?: return
-        val implLiteral = dependenciesBlockElement.getPropertyElement("implementation", GradleDslLiteral::class.java)
-        val interLiteral = dependenciesBlockElement.getPropertyElement("interfaceApi", GradleDslLiteral::class.java)
-
-        if (implLiteral != null) {
-            val depModule = implLiteral.value.toString().split(':')[1]
-            if (moduleDepSet.add(depModule)) {
-                resolveConfigurationDependencies(depModule, project, moduleDepSet)
-            }
-        }
-
-        if (interLiteral != null) {
-            val depModule = interLiteral.value.toString().split(':')[1]
+        dependenciesBlockElement.literalList.forEach {
+            val depModule = it.value.toString().split(':')[1]
+            //implementation and interfaceApi
             if (moduleDepSet.add(depModule)) {
                 resolveConfigurationDependencies(depModule, project, moduleDepSet)
             }
@@ -217,7 +183,9 @@ class ComponentBuildAction : AnAction() {
             name,
             arguments[0] as GrExpression
         ) as GradleDslLiteral
-        blockElement.addParsedElement(propertyElement)
+        if (blockElement is DependenciesBlockElement) {
+            blockElement.addLiteralList(propertyElement)
+        }
     }
 
     private fun getBlockElement(

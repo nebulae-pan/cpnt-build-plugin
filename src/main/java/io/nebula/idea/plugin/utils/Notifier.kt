@@ -6,9 +6,9 @@ import com.intellij.notification.NotificationType
 import com.intellij.openapi.project.Project
 
 object Notifier {
-    val balloonNotificationGroup =
+    private val balloonNotificationGroup =
         NotificationGroup("component build info balloon", NotificationDisplayType.BALLOON, true)
-    val noneNotificationGroup = NotificationGroup("component build info none", NotificationDisplayType.BALLOON, true)
+    private val noneNotificationGroup = NotificationGroup("component build info none", NotificationDisplayType.NONE, true)
 
     fun notifyBalloon(project: Project, content: String) {
         Notifier.notifyBalloon(project, "", content)

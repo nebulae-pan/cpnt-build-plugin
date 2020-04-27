@@ -28,6 +28,8 @@ abstract class Snapshot internal constructor() {
 
     open fun writeToExternal(snapshot: File) {
         if (!snapshot.exists()) {
+            println(snapshot.parentFile.exists())
+            println(snapshot.parentFile.mkdirs())
             snapshot.createNewFile()
         } else {
             snapshot.delete()

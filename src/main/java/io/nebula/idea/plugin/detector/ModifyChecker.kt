@@ -171,5 +171,9 @@ object ModifyChecker {
         fun rewriteSnapshot() {
             snapshot.writeToExternal(outputDir)
         }
+
+        override fun toString(): String {
+            return moduleName
+        }
     }
 }
